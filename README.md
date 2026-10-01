@@ -1,1002 +1,286 @@
-# Statistical Moments and Validation Utilities for PyEyesWeb
+<div align="center">
 
-A lightweight Python component for computing **statistical moments from real-time multivariate signal windows**, together with reusable validation helpers used across the PyEyesWeb codebase.
+![PyEyesWeb Statistical Moment Analyzer](docs/assets/readme-banner.svg)
 
-The module focuses on four core distribution descriptors:
+# PyEyesWeb Statistical Moment Analyzer
 
-- mean
-- standard deviation
-- skewness
-- kurtosis
+### Column-wise signal descriptors with explicit statistical conventions
 
-It is designed for streaming sensor data, motion analysis, feature extraction, anomaly detection, and signal-quality assessment.
+![Python](https://img.shields.io/badge/Python-analysis%20module-3776AB?logo=python&logoColor=white)
+![NumPy](https://img.shields.io/badge/NumPy-vectorized%20statistics-013243?logo=numpy&logoColor=white)
+![SciPy](https://img.shields.io/badge/SciPy-distribution%20moments-8CAAE6?logo=scipy&logoColor=white)
+![Integration](https://img.shields.io/badge/Integration-PyEyesWeb-7357D5)
 
----
+[Overview](#overview) · [Methods](#statistical-methods) · [Setup](#setup-and-integration) · [API](#analyzer-api) · [Validators](#validation-utilities) · [Verification](#verification-status)
+
+</div>
 
 ## Overview
 
-Statistical moments provide a compact description of the shape and behaviour of a signal distribution.
+This repository provides a compact statistical-analysis component and parameter-validation utilities for integration with PyEyesWeb. The analyzer computes mean, sample standard deviation, skewness, and excess kurtosis independently for each signal column in a full sliding window.
 
-For a multivariate sliding window, this module computes each requested statistic independently for every feature column.
+The component can supply features to sensor, movement, and time-series workflows. It does not ingest a live sensor stream, manage the window buffer, classify activities, detect anomalies, or produce clinical interpretations by itself.
 
-```text
-Sliding-window signal data
-          ↓
-Window completeness check
-          ↓
-Requested moment selection
-          ↓
-Column-wise computation
-          ↓
-Dictionary of scalar or vector results
+| Component | Responsibility |
+|---|---|
+| [statistical_moment.py](statistical_moment.py) | Selected statistical descriptors for a full signal window |
+| [validators.py](validators.py) | Parameter type, bound, list, and filter-tuple checks |
+| [Test Files](Test%20Files) | Existing demonstration and test scripts with differing API assumptions |
+| External PyEyesWeb | Sliding-window implementation and shared filter-frequency validation |
+
+**Repository scope:** the source modules live at the repository root. The `pyeyesweb` package hierarchy, `SlidingWindow` implementation, packaging metadata, and dependency lockfile are not included here.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A[External signal window] --> B{Window full?}
+    B -->|No| C[Scalar NaN]
+    B -->|Yes| D[Extract sample-by-feature array]
+    D --> E{At least two samples?}
+    E -->|No| C
+    E -->|Yes| F[Compute requested column statistics]
+    F --> G[Scalar or list values in dictionary]
+    H[Optional caller-side validators] --> F
 ```
 
-The same repository also includes reusable validators for:
+The analyzer calls `is_full()` and `to_array()` on the supplied window. It takes the first item from `to_array()`; the second item, such as timestamps, is ignored. Validators are available to callers but are not automatically invoked by the analyzer.
 
-- numeric parameters
-- integer parameters
-- boolean flags
-- lists and option sets
-- bounded ranges
-- filter parameter tuples
-- window sizes
+## Statistical methods
 
----
+Let $x_{ij}$ be sample $i$ in feature column $j$, with $n$ samples. Define the column mean and empirical central moments as
 
-## Main Components
+$$
+\bar{x}_j = \frac{1}{n}\sum_{i=1}^{n}x_{ij},
+\qquad
+m_{r,j} = \frac{1}{n}\sum_{i=1}^{n}(x_{ij}-\bar{x}_j)^r.
+$$
 
-```text
-pyeyesweb/
-├── analysis/
-│   └── statistical_moment.py
-├── utils/
-│   └── validators.py
-└── data_models/
-    └── sliding_window.py
-```
+| Requested method | Response key | Definition | Implementation convention |
+|---|---|---|---|
+| `mean` | `mean` | $\bar{x}_j$ | NumPy arithmetic mean |
+| `std_dev` | `std` | $\sqrt{\frac{1}{n-1}\sum_i(x_{ij}-\bar{x}_j)^2}$ | Sample standard deviation, `ddof=1` |
+| `skewness` | `skewness` | $m_{3,j}/m_{2,j}^{3/2}$ | SciPy default moment estimator, `bias=True` |
+| `kurtosis` | `kurtosis` | $m_{4,j}/m_{2,j}^{2}-3$ | SciPy Fisher excess kurtosis, `fisher=True, bias=True` |
 
-Suggested filenames:
+Only requested methods are computed. Every operation uses `axis=0`, preserving the input feature-column order.
 
-```text
-StatisticalMoment.py
-validators.py
-```
+### Interpretation
 
----
+Mean describes level; standard deviation describes dispersion in the original signal units. Skewness and excess kurtosis are dimensionless. Positive skewness indicates right-sided asymmetry. Excess kurtosis characterizes standardized fourth-moment behavior relative to a Gaussian population baseline of zero.
 
-## Features
+A finite Gaussian sample need not have exactly zero skewness or excess kurtosis. The current skewness and kurtosis calls use biased finite-sample estimators; the sample-standard-deviation convention does not make all four estimators bias-corrected.
 
-- real-time statistical analysis from `SlidingWindow`
-- support for univariate and multivariate signals
-- selective computation of requested moments
-- sample standard deviation with `ddof=1`
-- SciPy-based skewness and kurtosis
-- automatic scalar output for one feature
-- list output for multiple features
-- callable analyzer interface
-- reusable parameter-validation utilities
-- consistent error messages across modules
-- filter-parameter normalization support
+These summaries discard temporal ordering within a window. Signals with the same value distribution can have different temporal dynamics; combine moments with appropriate temporal or spectral features when the application requires them.
 
----
+## Setup and integration
 
-## Requirements
+### Clone and prepare an environment
 
-- Python 3.9 or later
-- NumPy
-- SciPy
-- PyEyesWeb
-
-Install the external dependencies with:
+Python 3.10 or newer is a practical starting point, subject to the requirements of your PyEyesWeb version. This repository does not declare a tested Python-version matrix.
 
 ```bash
-pip install numpy scipy
+git clone https://github.com/Foysal-A-Al/PyEyesWeb_Statistical-Moment-Analyzer.git
+cd PyEyesWeb_Statistical-Moment-Analyzer
+python -m venv .venv
 ```
 
-The analyzer imports:
+| Platform | Activate the environment |
+|---|---|
+| Windows PowerShell | `.venv\Scripts\Activate.ps1` |
+| Linux / macOS | `source .venv/bin/activate` |
+
+```bash
+python -m pip install numpy scipy
+```
+
+### Supply the upstream modules
+
+Before importing `statistical_moment.py`, install or expose a compatible PyEyesWeb checkout in the same environment. This import must succeed:
 
 ```python
 from pyeyesweb.data_models.sliding_window import SlidingWindow
 ```
 
-The filter validator optionally imports:
+The analyzer imports that class at module load time even when you supply a window-like adapter. NumPy and SciPy alone are therefore insufficient to import the analyzer.
+
+For the filter-normalization helper, this additional upstream import must succeed:
 
 ```python
 from pyeyesweb.utils.signal_processing import validate_filter_params
 ```
 
-Make sure those PyEyesWeb modules are available on the Python path.
+The latter import is deferred until `validate_and_normalize_filter_params` is called with a non-`None` argument. Other functions in `validators.py` can be used without PyEyesWeb.
 
----
+There is no installation command such as `pip install .` for this checkout because it has no `pyproject.toml` or `setup.py`. From the repository root, use `from statistical_moment import StatisticalMoment` and `from validators import ...`. Package-qualified imports apply only after integrating the files into an upstream package.
 
-## Quick Start
+## Quick example
+
+After satisfying the upstream import above, this example exercises the analyzer without assuming a particular `SlidingWindow` constructor or append API:
 
 ```python
-from pyeyesweb.analysis.statistical_moment import StatisticalMoment
+import numpy as np
+from statistical_moment import StatisticalMoment
 
-analyzer = StatisticalMoment()
+class FullWindow:
+    """Example adapter; not a replacement streaming buffer."""
 
-result = analyzer(
-    sliding_window,
-    methods=[
-        "mean",
-        "std_dev",
-        "skewness",
-        "kurtosis",
-    ],
+    def __init__(self, data):
+        self.data = np.asarray(data, dtype=float)
+
+    def is_full(self):
+        return True
+
+    def to_array(self):
+        return self.data, None
+
+window = FullWindow([
+    [1, 10],
+    [2, 20],
+    [3, 30],
+    [4, 40],
+    [5, 50],
+])
+
+result = StatisticalMoment()(
+    window,
+    methods=["mean", "std_dev", "skewness", "kurtosis"],
 )
-
 print(result)
 ```
 
-Example output for a three-feature signal:
+Expected values, rounded for presentation:
 
 ```python
 {
-    "mean": [0.15, -0.03, 1.42],
-    "std": [0.81, 0.54, 0.22],
-    "skewness": [0.10, -0.41, 0.07],
-    "kurtosis": [-0.72, 0.18, 1.24],
+    "mean": [3.0, 30.0],
+    "std": [1.581139, 15.811388],
+    "skewness": [0.0, 0.0],
+    "kurtosis": [-1.3, -1.3],
 }
 ```
 
----
+For a single-column array, each value is a Python `float` rather than a one-element list. Keep data two-dimensional: univariate input should have shape `(n_samples, 1)`.
 
-## Supported Methods
-
-| Input method name | Output key | Computation |
-|---|---|---|
-| `"mean"` | `"mean"` | Arithmetic mean |
-| `"std_dev"` | `"std"` | Sample standard deviation |
-| `"skewness"` | `"skewness"` | Distribution asymmetry |
-| `"kurtosis"` | `"kurtosis"` | Fisher excess kurtosis |
-
-Only requested methods are computed.
-
-Unknown method names are currently ignored silently.
-
----
-
-## Basic Usage with a Sliding Window
+## Analyzer API
 
 ```python
-from pyeyesweb.analysis.statistical_moment import StatisticalMoment
-from pyeyesweb.data_models.sliding_window import SlidingWindow
-
-window = SlidingWindow(
-    max_length=50,
-    n_columns=3,
-)
-
-for sample in signal_stream:
-    window.append(sample)
-
 analyzer = StatisticalMoment()
-
-result = analyzer.compute_statistics(
-    window,
-    methods=["mean", "std_dev"],
-)
-
-print(result)
+result = analyzer.compute_statistics(signals, methods)
+result = analyzer(sliding_window, methods)
 ```
 
-When the window is not full, the method returns:
+The callable form delegates to `compute_statistics`. The constructor has no configurable parameters; supply the method list on each call.
+
+| Contract | Actual behavior |
+|---|---|
+| Window input | Object exposing `is_full()` and `to_array()` |
+| Array input inside the window | Numeric two-dimensional array, samples × features |
+| Ready window with at least two samples | Dictionary of requested statistics |
+| Non-full window or fewer than two samples | Scalar `np.nan` |
+| One feature | Scalar float per statistic |
+| Multiple features | List per statistic in column order |
+| Unknown method | Silently skipped |
+| Empty method list | Empty dictionary for a ready, sufficiently populated window |
+
+Although the source annotates the return as `dict`, the runtime contract also includes a scalar `NaN`. Handle readiness explicitly:
 
 ```python
-np.nan
+result = analyzer(window, methods=["mean", "std_dev"])
+
+if isinstance(result, dict):
+    # Consume result["mean"] and result["std"] here.
+    print(result)
+else:
+    # The window is not ready or has fewer than two samples.
+    print("Statistics unavailable")
 ```
 
----
+No sample-count metadata, interpretation text, feature names, confidence intervals, or array-based `compute_statistical_moments` function is implemented.
 
-## Univariate Output
+## Validation utilities
 
-For a one-column signal:
+Import the helpers from the root module:
 
 ```python
-result = analyzer(
-    window,
-    methods=["mean", "std_dev"],
-)
-```
+from validators import validate_list, validate_numeric, validate_window_size
 
-The result contains scalar values:
-
-```python
-{
-    "mean": 0.42,
-    "std": 0.18,
-}
-```
-
----
-
-## Multivariate Output
-
-For a signal with multiple columns:
-
-```python
-{
-    "mean": [0.42, 0.81, -0.12],
-    "std": [0.18, 0.21, 0.09],
-}
-```
-
-The order of returned values follows the input feature-column order.
-
----
-
-## Statistical Definitions
-
-### Mean
-
-The arithmetic mean measures central tendency:
-
-```text
-μ = (1 / n) Σ xᵢ
-```
-
-Implementation:
-
-```python
-np.mean(data, axis=0)
-```
-
-### Standard deviation
-
-The module uses the sample standard deviation:
-
-```text
-s = √[Σ(xᵢ − x̄)² / (n − 1)]
-```
-
-Implementation:
-
-```python
-np.std(data, axis=0, ddof=1)
-```
-
-### Skewness
-
-Skewness measures distribution asymmetry.
-
-Interpretation:
-
-- near `0`: approximately symmetric
-- positive: longer right tail
-- negative: longer left tail
-
-Implementation:
-
-```python
-scipy.stats.skew(data, axis=0)
-```
-
-### Kurtosis
-
-Kurtosis measures tail heaviness and concentration.
-
-SciPy returns Fisher excess kurtosis by default:
-
-- near `0`: similar to a normal distribution
-- positive: heavier tails
-- negative: lighter tails
-
-Implementation:
-
-```python
-scipy.stats.kurtosis(data, axis=0)
-```
-
----
-
-## API Reference
-
-## `StatisticalMoment`
-
-```python
-StatisticalMoment()
-```
-
-The class currently has no constructor parameters.
-
----
-
-### `compute_statistics(signals, methods)`
-
-Computes selected statistical moments from a full sliding window.
-
-```python
-result = analyzer.compute_statistics(
-    signals,
-    methods=["mean", "std_dev"],
-)
-```
-
-Parameters:
-
-| Parameter | Type | Description |
-|---|---|---|
-| `signals` | `SlidingWindow` | Full multivariate signal window |
-| `methods` | `list[str]` | Requested statistics |
-
-Returns:
-
-- `dict` when computation succeeds
-- `np.nan` when the window is not full
-- `np.nan` when fewer than two samples are available
-
----
-
-### `__call__(sliding_window, methods)`
-
-Callable wrapper around `compute_statistics`.
-
-```python
-result = analyzer(
-    sliding_window,
-    ["mean", "skewness"],
-)
-```
-
----
-
-## Validation Utilities
-
-The validation module provides consistent parameter checks for PyEyesWeb components.
-
----
-
-### `validate_numeric`
-
-```python
-validate_numeric(
-    value,
-    name,
-    min_val=None,
-    max_val=None,
-)
-```
-
-Validates an integer or floating-point parameter and returns it as `float`.
-
-Example:
-
-```python
-rate = validate_numeric(
-    50,
-    "rate_hz",
-    min_val=0.1,
-    max_val=100000,
-)
-```
-
-Raises:
-
-- `TypeError` for non-numeric values
-- `ValueError` for values outside the configured bounds
-
----
-
-### `validate_integer`
-
-```python
-validate_integer(
-    value,
-    name,
-    min_val=None,
-    max_val=None,
-)
-```
-
-Example:
-
-```python
-window_size = validate_integer(
-    100,
-    "window_size",
-    min_val=1,
-    max_val=10000,
-)
-```
-
----
-
-### `validate_boolean`
-
-```python
-enabled = validate_boolean(
-    True,
-    "output_interpretation",
-)
-```
-
-Unlike Python truthiness checks, this function rejects integers such as `0` and `1`.
-
----
-
-### `validate_list`
-
-```python
+size = validate_window_size(50)
+rate_hz = validate_numeric(100, "rate_hz", min_val=0.1)
 methods = validate_list(
     ["mean", "std_dev"],
     "methods",
-    valid_options=[
-        "mean",
-        "std_dev",
-        "skewness",
-        "kurtosis",
-    ],
+    valid_options=["mean", "std_dev", "skewness", "kurtosis"],
     min_length=1,
 )
 ```
 
-It can validate:
+| Function | Accepted input and behavior |
+|---|---|
+| `validate_numeric(value, name, min_val=None, max_val=None)` | Python `int` or `float`; returns float; optional inclusive bounds |
+| `validate_integer(value, name, min_val=None, max_val=None)` | Python `int`; returns original value; optional inclusive bounds |
+| `validate_boolean(value, name)` | Boolean only; rejects integer 0 and 1 |
+| `validate_list(value, name, valid_options=None, min_length=None, max_length=None)` | List with optional length and membership constraints |
+| `validate_range(value, name, min_val, max_val)` | Inclusive range check; returns original value without casting |
+| `validate_filter_params_tuple(value, name="filter_params")` | Three numeric tuple/list elements; returns tuple |
+| `validate_and_normalize_filter_params(filter_params)` | Returns `None` unchanged or delegates a validated triple to upstream filter validation |
+| `validate_window_size(value, name="window_size")` | Integer from 1 to 10,000 |
 
-- input type
-- minimum length
-- maximum length
-- allowed element values
+Type violations generally raise `TypeError`; constraint violations raise `ValueError`. The range helper assumes comparable input and may raise Python's comparison `TypeError`.
 
----
+**Boundary behavior:** numeric, integer, and filter-tuple checks accept booleans because Python treats them as integers. Numeric validation does not explicitly reject nonfinite values; `NaN` can bypass its optional bound comparisons. These helpers should not be treated as complete signal-data validation.
 
-### `validate_range`
+## Numerical behavior and performance
 
-```python
-threshold = validate_range(
-    0.7,
-    "threshold",
-    0.0,
-    1.0,
-)
-```
+- Constant columns have zero variance; skewness and kurtosis may return `NaN` and issue precision warnings.
+- Missing values propagate through the current NumPy/SciPy calls; no configurable omission or rejection policy is implemented.
+- Infinite values and extreme magnitudes can produce nonfinite results or numerical warnings.
+- Signal dimensionality and finiteness are not checked before computation; malformed arrays may raise exceptions.
+- Timestamps are ignored, and the sample count does not imply a particular physical window duration.
 
-This helper assumes the input already supports comparison.
+For a fixed set of requested methods, computation is approximately $O(nd)$ for $n$ samples and $d$ features. The full-window array and intermediates dominate memory. Moments are recomputed on each call; there is no incremental update algorithm or measured real-time latency guarantee.
 
----
+## Verification status
 
-### `validate_filter_params_tuple`
+The [existing test scripts](Test%20Files) contain both current-interface demonstrations and scripts written for a different API:
 
-```python
-params = validate_filter_params_tuple(
-    (1.0, 10.0, 100.0),
-)
-```
+| Script group | Compatibility finding |
+|---|---|
+| `test_statistical_moment.py` | Uses the current constructor and per-call method list, but primarily prints results instead of asserting correctness |
+| Basic, edge, error, and scenario scripts | Import the absent `compute_statistical_moments` function and/or pass unsupported constructor arguments |
 
-Expected structure:
+The repository has no CI workflow or reproducible test environment. A passing portable test suite is not claimed. This documentation update verifies the README against the current source, checks links and navigation, and inspects the banner; it does not establish upstream integration or streaming performance.
 
-```text
-(lowcut, highcut, sampling_frequency)
-```
+For future verification, prioritize numerical reference assertions, full/non-full windows, single/multiple columns, small samples, constant data, nonfinite inputs, validator boundaries, and compatibility with a specified upstream PyEyesWeb revision.
 
-The function accepts a tuple or list and returns a tuple.
+## Troubleshooting
 
----
+| Symptom | Explanation or action |
+|---|---|
+| `No module named pyeyesweb` | Make the compatible upstream package available in the active environment |
+| Unsupported constructor keyword | Use `StatisticalMoment()`; pass `methods` to the analysis call |
+| Missing `compute_statistical_moments` import | That function is not part of the current source API |
+| `KeyError: std_dev` | The response key is `std`; `std_dev` is the request identifier |
+| Scalar `NaN` instead of a dictionary | The window is not full or has fewer than two samples |
+| Shape-unpacking error | Supply a two-dimensional sample-by-feature array |
+| Nonfinite skewness or kurtosis | Inspect constant columns, missing values, and numerical scale |
 
-### `validate_and_normalize_filter_params`
+## Development priorities
 
-```python
-params = validate_and_normalize_filter_params(
-    (1.0, 10.0, 100.0),
-)
-```
+Potential improvements, not current capabilities:
 
-This function:
+1. Align test scripts with the implemented API and add assertion-based regression checks.
+2. Declare the upstream dependency and package the modules reproducibly.
+3. Add explicit shape, finiteness, method-list, and boolean validation.
+4. Introduce a consistent readiness/result schema and configurable statistical conventions.
+5. Benchmark rolling or incremental algorithms against current full-window recomputation.
 
-1. allows `None`
-2. validates tuple structure
-3. calls the shared signal-processing validator
-4. returns normalized filter parameters
+Open [an issue](https://github.com/Foysal-A-Al/PyEyesWeb_Statistical-Moment-Analyzer/issues) with the input shape, dependency versions, requested methods, and a minimal reproducer before proposing a behavior change.
 
----
+## Maintainer and licensing
 
-### `validate_window_size`
+Maintained by [Abdullah Al Foysal](https://github.com/Foysal-A-Al).
 
-```python
-window_size = validate_window_size(250)
-```
+No license file is currently included in this repository. Do not infer reuse permissions from the project's name or from the license of an upstream PyEyesWeb installation; clarify licensing with the maintainer before redistribution.
 
-Equivalent to:
-
-```python
-validate_integer(
-    value,
-    "window_size",
-    min_val=1,
-    max_val=10000,
-)
-```
-
----
-
-## Example: Motion Feature Extraction
-
-```python
-analyzer = StatisticalMoment()
-
-features = analyzer(
-    movement_window,
-    methods=[
-        "mean",
-        "std_dev",
-        "skewness",
-        "kurtosis",
-    ],
-)
-
-if isinstance(features, dict):
-    movement_feature_vector = [
-        *features["mean"],
-        *features["std"],
-        *features["skewness"],
-        *features["kurtosis"],
-    ]
-```
-
-This can support:
-
-- movement classification
-- anomaly detection
-- activity recognition
-- gait analysis
-- behavioural signal modelling
-
----
-
-## Example: Selecting Only Required Features
-
-```python
-result = analyzer(
-    window,
-    methods=["mean", "std_dev"],
-)
-```
-
-This avoids unnecessary skewness and kurtosis calculations when only first- and second-order statistics are needed.
-
----
-
-## Example: Parameter Validation in Another Module
-
-```python
-from pyeyesweb.utils.validators import (
-    validate_boolean,
-    validate_integer,
-    validate_list,
-    validate_numeric,
-)
-
-class SignalAnalyzer:
-    def __init__(
-        self,
-        window_size=100,
-        threshold=0.5,
-        enabled=True,
-        methods=None,
-    ):
-        if methods is None:
-            methods = ["mean", "std_dev"]
-
-        self.window_size = validate_integer(
-            window_size,
-            "window_size",
-            min_val=1,
-            max_val=10000,
-        )
-
-        self.threshold = validate_numeric(
-            threshold,
-            "threshold",
-            min_val=0.0,
-            max_val=1.0,
-        )
-
-        self.enabled = validate_boolean(
-            enabled,
-            "enabled",
-        )
-
-        self.methods = validate_list(
-            methods,
-            "methods",
-            valid_options=[
-                "mean",
-                "std_dev",
-                "skewness",
-                "kurtosis",
-            ],
-            min_length=1,
-        )
-```
-
----
-
-## Recommended Project Structure
-
-```text
-pyeyesweb/
-├── analysis/
-│   ├── __init__.py
-│   └── statistical_moment.py
-├── data_models/
-│   ├── __init__.py
-│   └── sliding_window.py
-├── utils/
-│   ├── __init__.py
-│   ├── validators.py
-│   └── signal_processing.py
-└── tests/
-    ├── test_statistical_moment.py
-    └── test_validators.py
-```
-
----
-
-## Testing
-
-Run all tests:
-
-```bash
-pytest -v
-```
-
-Run only statistical-moment tests:
-
-```bash
-pytest tests/test_statistical_moment.py -v
-```
-
-Run only validator tests:
-
-```bash
-pytest tests/test_validators.py -v
-```
-
----
-
-## Suggested Tests for `StatisticalMoment`
-
-The test suite should cover:
-
-- incomplete window
-- one-feature input
-- multi-feature input
-- mean computation
-- sample standard deviation
-- skewness computation
-- kurtosis computation
-- selective method execution
-- unknown method handling
-- fewer than two samples
-- constant-valued features
-- NaN and infinite inputs
-- callable interface
-
-Example:
-
-```python
-def test_multivariate_mean(full_window):
-    analyzer = StatisticalMoment()
-
-    result = analyzer(
-        full_window,
-        methods=["mean"],
-    )
-
-    assert "mean" in result
-    assert isinstance(result["mean"], list)
-```
-
----
-
-## Suggested Tests for Validators
-
-The validation test suite should cover:
-
-- valid numeric input
-- numeric lower and upper bounds
-- rejection of strings
-- integer validation
-- rejection of booleans as integers where relevant
-- boolean validation
-- list length constraints
-- invalid list options
-- range bounds
-- malformed filter tuples
-- non-numeric filter elements
-- `None` filter parameters
-- valid window sizes
-
----
-
-## Important Behaviour Notes
-
-### Inconsistent return type
-
-`compute_statistics` returns either:
-
-```python
-dict
-```
-
-or:
-
-```python
-np.nan
-```
-
-This makes type handling less predictable.
-
-A more consistent design would return:
-
-```python
-{
-    "ready": False,
-    "statistics": None,
-}
-```
-
-or an empty dictionary.
-
-### Invalid methods are ignored
-
-Unknown method names are skipped silently:
-
-```python
-methods=["mean", "invalid"]
-```
-
-returns only the mean.
-
-For stricter behaviour, validate methods before computation:
-
-```python
-validate_list(
-    methods,
-    "methods",
-    valid_options=[
-        "mean",
-        "std_dev",
-        "skewness",
-        "kurtosis",
-    ],
-)
-```
-
-### Output key mismatch
-
-The input method name is:
-
-```text
-std_dev
-```
-
-but the output key is:
-
-```text
-std
-```
-
-This should be documented or standardized.
-
-### Constant features
-
-Skewness and kurtosis may return `NaN` for constant-valued signals because the variance is zero.
-
-### Missing-value handling
-
-The implementation uses standard NumPy and SciPy functions, not their NaN-aware alternatives.
-
-Inputs containing `NaN` can propagate `NaN` into the results.
-
-### Bias correction
-
-SciPy's default skewness and kurtosis settings may include bias in finite samples.
-
-Research applications may prefer:
-
-```python
-stats.skew(data, axis=0, bias=False)
-stats.kurtosis(data, axis=0, bias=False)
-```
-
-### Fisher kurtosis
-
-The current implementation uses Fisher kurtosis, where a normal distribution has expected kurtosis near zero.
-
-### Boolean values in numeric validation
-
-In Python, `bool` is a subclass of `int`.
-
-The current `validate_numeric` accepts:
-
-```python
-True
-False
-```
-
-as numeric values.
-
-The current `validate_integer` also accepts booleans because:
-
-```python
-isinstance(True, int)
-```
-
-is `True`.
-
-If this is undesirable, explicitly reject booleans.
-
----
-
-## Recommended Improvements
-
-### Validate the method list
-
-```python
-VALID_METHODS = [
-    "mean",
-    "std_dev",
-    "skewness",
-    "kurtosis",
-]
-
-methods = validate_list(
-    methods,
-    "methods",
-    valid_options=VALID_METHODS,
-    min_length=1,
-)
-```
-
-### Return a consistent result object
-
-```python
-{
-    "ready": True,
-    "sample_size": n_samples,
-    "feature_dimension": n_features,
-    "statistics": result,
-}
-```
-
-### Add NaN policies
-
-Support options such as:
-
-```python
-nan_policy="propagate"
-nan_policy="omit"
-nan_policy="raise"
-```
-
-### Add bias configuration
-
-```python
-StatisticalMoment(
-    bias=False,
-    fisher=True,
-)
-```
-
-### Add feature names
-
-Instead of position-only lists:
-
-```python
-{
-    "mean": {
-        "x": 0.15,
-        "y": 0.22,
-        "z": 0.91,
-    }
-}
-```
-
-### Use structured type hints
-
-```python
-from typing import Literal, Sequence, TypedDict
-```
-
-### Improve validation consistency
-
-Reject booleans explicitly in numeric and integer validators:
-
-```python
-if isinstance(value, bool):
-    raise TypeError(...)
-```
-
----
-
-## Performance
-
-For a window with:
-
-- `n` samples
-- `d` features
-
-the basic statistical calculations are approximately:
-
-```text
-O(n × d)
-```
-
-Memory usage is dominated by the sliding-window array.
-
-The module is suitable for small and medium streaming windows. For very high-frequency signals, consider incremental or online moment algorithms that avoid recalculating statistics over the entire window.
-
----
-
-## Online Alternatives
-
-For high-throughput streaming applications, future versions could use:
-
-- Welford's online mean and variance
-- online skewness and kurtosis algorithms
-- rolling NumPy or pandas operations
-- Numba acceleration
-- vectorized batch updates
-
-These approaches may reduce repeated computation for overlapping windows.
-
----
-
-## Research Considerations
-
-Statistical moments are useful but should not be interpreted in isolation.
-
-For signal characterization, consider combining them with:
-
-- median
-- interquartile range
-- entropy
-- RMS
-- zero-crossing rate
-- spectral energy
-- dominant frequency
-- autocorrelation
-- Hjorth parameters
-- wavelet features
-- clusterability measures
-
----
-
-## References
-
-- Pearson, K. (1895). *Contributions to the Mathematical Theory of Evolution*.
-- Fisher, R. A. (1925). *Statistical Methods for Research Workers*.
-- SciPy documentation for `scipy.stats.skew`.
-- SciPy documentation for `scipy.stats.kurtosis`.
-
----
-
-## Contributing
-
-Contributions are welcome for:
-
-- stricter validation
-- richer statistical descriptors
-- online algorithms
-- improved type hints
-- NaN handling
-- test coverage
-- performance benchmarking
-- documentation improvements
-
-Suggested workflow:
-
-```bash
-git checkout -b feature/improve-statistical-moments
-pytest -v
-git add .
-git commit -m "Improve statistical moments analysis"
-git push origin feature/improve-statistical-moments
-```
-
-## Disclaimer
-
-This module provides general-purpose signal statistics.
-
-It does not independently provide clinical, behavioural, or diagnostic conclusions. Any use in healthcare, psychology, or human-movement research requires suitable validation, study design, and domain interpretation.
+Statistical descriptors are general-purpose features. Healthcare, psychology, or movement-research applications require their own study design, domain interpretation, and validation.
