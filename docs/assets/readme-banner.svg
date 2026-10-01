@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="260" viewBox="0 0 1280 260" role="img" aria-labelledby="title desc">
+<title id="title">PyEyesWeb Statistical Moment Analyzer</title>
+<desc id="desc">Signal distributions, explicitly described. Mean, dispersion, asymmetry, and excess kurtosis. Decorative signal and distribution illustration.</desc>
+<defs><linearGradient id="bg"><stop stop-color="#101d31"/><stop offset="1" stop-color="#182740"/></linearGradient></defs>
+<rect width="1280" height="260" rx="18" fill="url(#bg)"/>
+<rect x="40" y="43" width="4" height="155" rx="2" fill="#58e6c1"/>
+<g font-family="DejaVu Sans, Arial, sans-serif">
+<text x="66" y="65" fill="#58e6c1" font-size="12" letter-spacing="2">SIGNAL ANALYSIS &amp; STATISTICAL METHODS</text>
+<text x="64" y="121" fill="#f5f8ff" font-size="38" font-weight="700">PyEyesWeb Moments</text>
+<text x="66" y="162" fill="#c7d4e6" font-size="21">Signal distributions, explicitly described</text>
+<text x="66" y="216" fill="#8da2be" font-size="14">Mean / Sample dispersion / Skewness / Excess kurtosis</text>
+</g>
+<g transform="translate(914 50)" fill="none">
+<path d="M0 150 H310" stroke="#314a68" stroke-width="2"/>
+<path d="M5 130 L35 130 L48 100 L65 143 L88 67 L110 124 L133 91 L160 127 L180 115 L205 129 L230 112 L255 130 L305 130" stroke="#66b3ff" stroke-width="2.5" opacity=".7"/>
+<path d="M5 148 C70 148 86 133 109 72 C127 20 149 10 168 49 C190 97 215 147 305 148" stroke="#58e6c1" stroke-width="3"/>
+<path d="M144 20 V150" stroke="#a69cff" stroke-width="2" stroke-dasharray="5 6"/>
+</g></svg>
